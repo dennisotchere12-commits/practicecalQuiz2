@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Summer Hut Garden — Three.js Scene</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #87CEEB; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 16px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.45);
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+    }
+  </style>
+</head>
+<body>
+<div id="info">🌴 Summer Hut Garden &nbsp;|&nbsp; Drag to Orbit &nbsp;·&nbsp; Scroll to Zoom</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ============================================================
+   GLOBALS
+   ============================================================ */
+let renderer, scene, camera, controls;
+
+/* ============================================================
+   MATERIAL LIBRARY — define once, reuse everywhere
+   ============================================================ */
+const MAT = {
+  wood:       new THREE.MeshStandardMaterial({ color: 0x8B5E3C, roughness: 0.85, metalness: 0.05 }),
+  woodDark:   new THREE.MeshStandardMaterial({ color: 0x5C3317, roughness: 0.9,  metalness: 0.0  }),
+  grass:      new THREE.MeshStandardMaterial({ color: 0x4CAF50, roughness: 1.0,  metalness: 0.0  }),
+  path:       new THREE.MeshStandardMaterial({ color: 0xC8A96E, roughness: 0.95, metalness: 0.0  }),
+  miloGreen:  new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.5,  metalness: 0.15 }),
+  milkWhite:  new THREE.MeshStandardMaterial({ color: 0xEEEEEE, roughness: 0.4,  metalness: 0.1  }),
+  lidMetal:   new THREE.MeshStandardMaterial({ color: 0xB0BEC5, roughness: 0.3,  metalness: 0.8  }),
+  cupCream:   new THREE.MeshStandardMaterial({ color: 0xFFF8E1, roughness: 0.6,  metalness: 0.0  }),
+  cupBlue:    new THREE.MeshStandardMaterial({ color: 0x5C9BD6, roughness: 0.5,  metalness: 0.05 }),
+  trunkBark:  new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 0.95, metalness: 0.0  }),
+  leaves:     new THREE.MeshStandardMaterial({ color: 0x388E3C, roughness: 0.9,  metalness: 0.0  }),
+  stone:      new THREE.MeshStandardMaterial({ color: 0x9E9E9E, roughness: 0.9,  metalness: 0.0  }),
+  fence:      new THREE.MeshStandardMaterial({ color: 0xD7CCC8, roughness: 0.8,  metalness: 0.0  }),
+  miloLabel:  new THREE.MeshStandardMaterial({ color: 0xFFD54F, roughness: 0.6,  metalness: 0.0  }),
+  milkLabel:  new THREE.MeshStandardMaterial({ color: 0x1565C0, roughness: 0.6,  metalness: 0.0  }),
+  // Summer hut materials
+  thatch:     new THREE.MeshStandardMaterial({ color: 0xC8960C, roughness: 1.0,  metalness: 0.0,  side: THREE.DoubleSide }),
+  thatchDark: new THREE.MeshStandardMaterial({ color: 0x8B6508, roughness: 1.0,  metalness: 0.0,  side: THREE.DoubleSide }),
+  hutPole:    new THREE.MeshStandardMaterial({ color: 0x7B4F1E, roughness: 0.9,  metalness: 0.0  }),
+  hutBeam:    new THREE.MeshStandardMaterial({ color: 0x9C6B2E, roughness: 0.85, metalness: 0.0  }),
+  hutFloor:   new THREE.MeshStandardMaterial({ color: 0xD2A679, roughness: 0.95, metalness: 0.0  }),
+};
+
+/* ============================================================
+   INIT SCENE — renderer, scene, camera, fog
+   ============================================================ */
+function initScene() {
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  document.body.appendChild(renderer.domElement);
+
+  // Scene
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87CEEB);
+  scene.fog = new THREE.Fog(0x87CEEB, 35, 80);
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.position.set(12, 10, 16);
+  camera.lookAt(0, 2, 0);
+
+  window.addEventListener('resize', onResize);
+}
+
+/* ============================================================
+   SETUP CONTROLS — OrbitControls with damping
+   ============================================================ */
+function setupControls() {
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.06;
+  controls.minDistance = 4;
+  controls.maxDistance = 40;
+  controls.maxPolarAngle = Math.PI / 2 - 0.04;
+  controls.target.set(0, 2, 0);
+  controls.update();
+}
+
+/* ============================================================
+   SETUP LIGHTING — 3-point system + hemisphere
+   ============================================================ */
+function setupLighting() {
+  // Hemisphere (sky/ground fill)
+  const hemi = new THREE.HemisphereLight(0xB3E5FC, 0x558B2F, 0.6);
+  scene.add(hemi);
+
+  // Ambient
+  const ambient = new THREE.AmbientLight(0xFFFFFF, 0.35);
+  scene.add(ambient);
+
+  // Directional — sun
+  const sun = new THREE.DirectionalLight(0xFFF8E1, 2.2);
+  sun.position.set(12, 18, 8);
+  sun.castShadow = true;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 80;
+  sun.shadow.camera.left = -22;
+  sun.shadow.camera.right = 22;
+  sun.shadow.camera.top = 22;
+  sun.shadow.camera.bottom = -22;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.001;
+  scene.add(sun);
+
+  // Point — warm table accent
+  const tableLight = new THREE.PointLight(0xFFE0B2, 1.2, 8);
+  tableLight.position.set(0, 3.5, 0);
+  tableLight.castShadow = true;
+  scene.add(tableLight);
+
+  // Rim light from back-left
+  const rim = new THREE.DirectionalLight(0xB2DFDB, 0.5);
+  rim.position.set(-10, 6, -6);
+  scene.add(rim);
+}
+
+/* ============================================================
+   HELPER — shadow-casting mesh
+   ============================================================ */
+function mesh(geo, mat, castShadow = true, receiveShadow = true) {
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = castShadow;
+  m.receiveShadow = receiveShadow;
+  return m;
+}
+
+/* ============================================================
+   CREATE GROUND — large grass plane + decorative path
+   ============================================================ */
+function createGround() {
+  // Grass
+  const ground = mesh(new THREE.PlaneGeometry(60, 60), MAT.grass, false, true);
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  // Circular stone path beneath table area
+  const pathDisc = mesh(new THREE.CylinderGeometry(4.5, 4.5, 0.04, 48), MAT.path);
+  pathDisc.position.set(0, 0.01, 0);
+  scene.add(pathDisc);
+
+  // Cross walkway
+  [-1, 1].forEach(sign => {
+    const strip = mesh(new THREE.PlaneGeometry(1.2, 16), MAT.path, false, true);
+    strip.rotation.x = -Math.PI / 2;
+    strip.rotation.z = sign * Math.PI / 4;
+    strip.position.set(sign * 0.6, 0.02, 0);
+    scene.add(strip);
+  });
+}
+
+/* ============================================================
+   CREATE TABLE — tabletop + 4 legs
+   ============================================================ */
+function createTable() {
+  const group = new THREE.Group();
+
+  // Tabletop
+  const top = mesh(new THREE.BoxGeometry(2.6, 0.12, 1.6), MAT.wood);
+  top.position.y = 1.0;
+  group.add(top);
+
+  // Apron strips
+  const apronFB = new THREE.BoxGeometry(2.4, 0.1, 0.06);
+  const apronLR = new THREE.BoxGeometry(0.06, 0.1, 1.36);
+  [[-1.2, 0], [1.2, 0]].forEach(([z, _]) => {
+    const a = mesh(new THREE.BoxGeometry(2.4, 0.1, 0.06), MAT.woodDark);
+    a.position.set(0, 0.88, z);
+    group.add(a);
+  });
+  [[-1.25, 0], [1.25, 0]].forEach(([x, _]) => {
+    const a = mesh(new THREE.BoxGeometry(0.06, 0.1, 1.36), MAT.woodDark);
+    a.position.set(x, 0.88, 0);
+    group.add(a);
+  });
+
+  // 4 legs
+  const legGeo = new THREE.CylinderGeometry(0.055, 0.07, 0.9, 8);
+  [[-1.1, -0.65], [-1.1, 0.65], [1.1, -0.65], [1.1, 0.65]].forEach(([x, z]) => {
+    const leg = mesh(legGeo, MAT.woodDark);
+    leg.position.set(x, 0.45, z);
+    group.add(leg);
+  });
+
+  scene.add(group);
+  return group;
+}
+
+/* ============================================================
+   CREATE CHAIR — seat, backrest, 4 legs
+   ============================================================ */
+function createChair(x, z, rotY = 0) {
+  const group = new THREE.Group();
+
+  // Seat
+  const seat = mesh(new THREE.BoxGeometry(0.7, 0.08, 0.7), MAT.wood);
+  seat.position.y = 0.52;
+  group.add(seat);
+
+  // Backrest (2 vertical slats + 1 top rail)
+  const backRail = mesh(new THREE.BoxGeometry(0.7, 0.07, 0.06), MAT.woodDark);
+  backRail.position.set(0, 0.92, -0.32);
+  group.add(backRail);
+
+  const midRail = mesh(new THREE.BoxGeometry(0.7, 0.05, 0.05), MAT.woodDark);
+  midRail.position.set(0, 0.72, -0.32);
+  group.add(midRail);
+
+  [-0.26, 0, 0.26].forEach(sx => {
+    const slat = mesh(new THREE.BoxGeometry(0.06, 0.44, 0.05), MAT.wood);
+    slat.position.set(sx, 0.72, -0.32);
+    group.add(slat);
+  });
+
+  // 4 legs
+  const legGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.54, 8);
+  [[-0.28, -0.28], [-0.28, 0.28], [0.28, -0.28], [0.28, 0.28]].forEach(([lx, lz]) => {
+    const leg = mesh(legGeo, MAT.woodDark);
+    leg.position.set(lx, 0.25, lz);
+    group.add(leg);
+  });
+
+  group.position.set(x, 0, z);
+  group.rotation.y = rotY;
+  scene.add(group);
+  return group;
+}
+
+/* ============================================================
+   LABEL PAINTERS — draw brand labels onto an HTML canvas,
+   then convert to THREE.CanvasTexture for cylinder mapping.
+   ============================================================ */
+
+function paintMiloLabel() {
+  const W = 512, H = 256;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+
+  // ── Background: Milo mid-green ────────────────────────────
+  ctx.fillStyle = '#2E7B32';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Darker green lower half panel ────────────────────────
+  ctx.fillStyle = '#1B5E20';
+  ctx.fillRect(0, H * 0.52, W, H * 0.48);
+
+  // ── Subtle diagonal light sweep (upper left) ──────────────
+  ctx.save();
+  const sweep = ctx.createLinearGradient(0, 0, W * 0.6, H * 0.5);
+  sweep.addColorStop(0,   'rgba(255,255,255,0.10)');
+  sweep.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+  sweep.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.fillStyle = sweep;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // ── Footballer silhouette (right side, dark green) ────────
+  ctx.save();
+  ctx.fillStyle = '#145214';
+  // Body
+  ctx.beginPath();
+  ctx.ellipse(W*0.78, H*0.72, 18, 28, -0.2, 0, Math.PI*2); ctx.fill();
+  // Head
+  ctx.beginPath();
+  ctx.arc(W*0.78, H*0.38, 12, 0, Math.PI*2); ctx.fill();
+  // Kicking leg
+  ctx.beginPath();
+  ctx.moveTo(W*0.74, H*0.78);
+  ctx.lineTo(W*0.62, H*0.88);
+  ctx.lineTo(W*0.66, H*0.92);
+  ctx.lineTo(W*0.79, H*0.83);
+  ctx.closePath(); ctx.fill();
+  // Standing leg
+  ctx.beginPath();
+  ctx.moveTo(W*0.80, H*0.82);
+  ctx.lineTo(W*0.82, H*0.96);
+  ctx.lineTo(W*0.87, H*0.96);
+  ctx.lineTo(W*0.86, H*0.82);
+  ctx.closePath(); ctx.fill();
+  // Arms
+  ctx.beginPath();
+  ctx.moveTo(W*0.73, H*0.55);
+  ctx.lineTo(W*0.60, H*0.62);
+  ctx.lineTo(W*0.62, H*0.67);
+  ctx.lineTo(W*0.76, H*0.60);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // ── Football (circle + pentagons) ────────────────────────
+  ctx.save();
+  ctx.fillStyle = '#E8F5E9';
+  ctx.beginPath();
+  ctx.arc(W*0.63, H*0.88, 11, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#1B5E20';
+  // Pentagon patches
+  [[0,-8],[7,5],[-7,5]].forEach(([dx,dy]) => {
+    ctx.beginPath();
+    ctx.arc(W*0.63+dx, H*0.88+dy, 3.5, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+
+  // ── White central oval ────────────────────────────────────
+  ctx.save();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowColor = 'rgba(0,0,0,0.25)';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.ellipse(W*0.42, H*0.46, 155, 90, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // ── Nestlé wordmark ───────────────────────────────────────
+  ctx.fillStyle = '#CC2200';
+  ctx.font = 'bold italic 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Nestlé', W*0.42, H*0.20);
+
+  // ── MILO logotype — brown with dark outline ───────────────
+  ctx.save();
+  ctx.font = 'bold 78px Impact, Arial Black, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.strokeStyle = '#3E1A00';
+  ctx.lineWidth = 8;
+  ctx.strokeText('MILO', W*0.42, H*0.56);
+  // Brown gradient fill
+  const miloGrad = ctx.createLinearGradient(W*0.2, H*0.30, W*0.2, H*0.58);
+  miloGrad.addColorStop(0, '#8B4000');
+  miloGrad.addColorStop(1, '#5C2500');
+  ctx.fillStyle = miloGrad;
+  ctx.fillText('MILO', W*0.42, H*0.56);
+  ctx.restore();
+
+  // ── "NEW" starburst badge (top-left of oval) ─────────────
+  ctx.save();
+  ctx.translate(W*0.14, H*0.17);
+  // Draw starburst
+  ctx.fillStyle = '#E53935';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? 20 : 10;
+    const a = (i / 10) * Math.PI * 2 - Math.PI/2;
+    i === 0 ? ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r)
+             : ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 11px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('NEW', 0, 4);
+  ctx.restore();
+
+  // ── ACTIV-GO orange burst (bottom-right of oval) ──────────
+  ctx.save();
+  ctx.translate(W*0.70, H*0.64);
+  ctx.fillStyle = '#FF6F00';
+  ctx.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const r = i % 2 === 0 ? 24 : 13;
+    const a = (i / 12) * Math.PI * 2 - Math.PI/2;
+    i === 0 ? ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r)
+             : ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 7px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ACTIV', 0, -2);
+  ctx.fillText('GO', 0, 8);
+  ctx.restore();
+
+  // ── Bottom text strip ─────────────────────────────────────
+  ctx.fillStyle = '#A5D6A7';
+  ctx.font = 'bold 11px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CHOCOLATE MALT BEVERAGE POWDER  •  400g', W/2, H*0.96);
+
+  return c;
+}
+
+function paintNidoLabel() {
+  const W = 512, H = 256;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+
+  // ── Background: bright Nido yellow ───────────────────────
+  const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+  bgGrad.addColorStop(0,   '#FFD600');
+  bgGrad.addColorStop(0.5, '#FFC107');
+  bgGrad.addColorStop(1,   '#FFB300');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Lighter yellow shimmer panel (centre) ─────────────────
+  ctx.save();
+  const shine = ctx.createRadialGradient(W*0.35, H*0.4, 20, W*0.35, H*0.4, 160);
+  shine.addColorStop(0, 'rgba(255,255,255,0.22)');
+  shine.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = shine;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // ── Milk splash shape (white blob, right side) ────────────
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.ellipse(W*0.78, H*0.52, 55, 72, 0.15, 0, Math.PI*2);
+  ctx.fill();
+  // Splash droplets
+  [[W*0.88, H*0.18, 10, 18], [W*0.96, H*0.32, 7, 13], [W*0.70, H*0.12, 8, 14]].forEach(([ex,ey,rx,ry]) => {
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, rx, ry, -0.3, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  // ── White central panel (slightly off-centre left) ────────
+  ctx.save();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowColor = 'rgba(180,100,0,0.18)';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.ellipse(W*0.38, H*0.50, 165, 96, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // ── Nestlé red wordmark ───────────────────────────────────
+  ctx.fillStyle = '#CC1E10';
+  ctx.font = 'bold italic 17px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Nestlé', W*0.38, H*0.18);
+
+  // ── NIDO logotype — large, red, bold ─────────────────────
+  ctx.save();
+  ctx.font = 'bold 82px Impact, Arial Black, sans-serif';
+  ctx.textAlign = 'center';
+  // Dark red outline
+  ctx.strokeStyle = '#7B0000';
+  ctx.lineWidth = 7;
+  ctx.strokeText('NIDO', W*0.38, H*0.60);
+  ctx.fillStyle = '#CC1E10';
+  ctx.fillText('NIDO', W*0.38, H*0.60);
+  ctx.restore();
+
+  // ── "FORTIFIED" small text under NIDO ────────────────────
+  ctx.fillStyle = '#CC1E10';
+  ctx.font = 'bold 12px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('FORTIFIED', W*0.38, H*0.70);
+
+  // ── FortiGrow badge (red+green pill, bottom-left of oval) ─
+  ctx.save();
+  ctx.translate(W*0.16, H*0.76);
+  // Red left half
+  ctx.fillStyle = '#CC1E10';
+  ctx.beginPath();
+  ctx.roundRect(-36, -14, 72, 28, 14);
+  ctx.fill();
+  // Green right half overlay
+  ctx.fillStyle = '#2E7D32';
+  ctx.beginPath();
+  ctx.roundRect(0, -14, 36, 28, [0, 14, 14, 0]);
+  ctx.fill();
+  // Text
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 10px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Forti', -10, -1);
+  ctx.fillText('Grow', -10, 10);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 9px Arial, sans-serif';
+  ctx.fillText('✓', 18, 5);
+  ctx.restore();
+
+  // ── "Instant Full Cream Milk Powder" bottom strip ─────────
+  ctx.fillStyle = '#5C3A00';
+  ctx.font = 'bold 11px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Instant Full Cream Milk Powder  •  400g', W*0.45, H*0.95);
+
+  return c;
+}
+
+/* ============================================================
+   CREATE TIN — full-wrap canvas label texture on cylinder body
+   ============================================================ */
+function createTin(x, z, isMilo) {
+  const group = new THREE.Group();
+
+  // ── Paint the label on a canvas → CanvasTexture ───────────
+  const labelCanvas = isMilo ? paintMiloLabel() : paintNidoLabel();
+  const labelTex = new THREE.CanvasTexture(labelCanvas);
+  // Wrap the texture around the cylinder's side (U=circumference, V=height)
+  labelTex.wrapS = THREE.RepeatWrapping;
+  labelTex.repeat.set(1, 1);
+
+  // Body — the whole cylinder IS the label (seamless wrap)
+  const bodyGeo = new THREE.CylinderGeometry(0.115, 0.115, 0.34, 48, 1, true);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    map: labelTex,
+    roughness: 0.55,
+    metalness: 0.1,
+    side: THREE.FrontSide,
+  });
+  const body = mesh(bodyGeo, bodyMat);
+  body.position.y = 0.17;
+  group.add(body);
+
+  // Top disc (plain tin colour matching brand)
+  const topColor = isMilo ? '#2E7B32' : '#FFC107';
+  const topMat = new THREE.MeshStandardMaterial({ color: topColor, roughness: 0.7, metalness: 0.1 });
+  const topDisc = mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.005, 32, 1, false), topMat);
+  topDisc.position.y = 0.34;
+  group.add(topDisc);
+
+  // Bottom disc
+  const botDisc = mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.005, 32, 1, false), topMat);
+  botDisc.position.y = 0.002;
+  group.add(botDisc);
+
+  // Lid (metallic silver cap)
+  const lid = mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.03, 32), MAT.lidMetal);
+  lid.position.y = 0.365;
+  group.add(lid);
+
+  // Lid rim ring
+  const rim = mesh(new THREE.TorusGeometry(0.12, 0.012, 8, 32), MAT.lidMetal);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.35;
+  group.add(rim);
+
+  group.position.set(x, 1.06, z);
+  scene.add(group);
+  return group;
+}
+
+/* ============================================================
+   CREATE CUP — tapered body + handle torus
+   ============================================================ */
+function createCup(x, z, mat) {
+  const group = new THREE.Group();
+
+  // Body (tapered)
+  const body = mesh(new THREE.CylinderGeometry(0.085, 0.065, 0.18, 20), mat);
+  body.position.y = 0.09;
+  group.add(body);
+
+  // Handle
+  const handle = mesh(new THREE.TorusGeometry(0.055, 0.015, 8, 18, Math.PI), mat);
+  handle.rotation.z = Math.PI / 2;
+  handle.position.set(0.1, 0.085, 0);
+  group.add(handle);
+
+  // Saucer
+  const saucer = mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.02, 20), MAT.cupCream);
+  saucer.position.y = -0.01;
+  group.add(saucer);
+
+  group.position.set(x, 1.06, z);
+  scene.add(group);
+  return group;
+}
+
+/* ============================================================
+   CREATE TREE — bark trunk + layered sphere canopy
+   ============================================================ */
+function createTree(x, z, scale = 1) {
+  const group = new THREE.Group();
+
+  const trunkH = 1.6 * scale;
+  const trunk = mesh(new THREE.CylinderGeometry(0.12 * scale, 0.18 * scale, trunkH, 10), MAT.trunkBark);
+  trunk.position.y = trunkH / 2;
+  group.add(trunk);
+
+  // 3-sphere canopy
+  const radii = [0.7, 0.6, 0.5].map(r => r * scale);
+  const offsets = [[0, trunkH + 0.5 * scale, 0], [-0.3 * scale, trunkH + 0.3 * scale, 0.2 * scale], [0.3 * scale, trunkH + 0.25 * scale, -0.2 * scale]];
+  offsets.forEach(([ox, oy, oz], i) => {
+    const leafMat = MAT.leaves.clone();
+    leafMat.color.setHSL(0.33, 0.55, 0.28 + i * 0.04);
+    const ball = mesh(new THREE.SphereGeometry(radii[i], 12, 10), leafMat);
+    ball.position.set(ox, oy, oz);
+    group.add(ball);
+  });
+
+  group.position.set(x, 0, z);
+  scene.add(group);
+  return group;
+}
+
+/* ============================================================
+   CREATE FENCE — posts + rails
+   ============================================================ */
+function createFence(x0, z0, x1, z1) {
+  const group = new THREE.Group();
+  const dx = x1 - x0, dz = z1 - z0;
+  const len = Math.sqrt(dx * dx + dz * dz);
+  const posts = Math.round(len / 1.2);
+  const angle = Math.atan2(dz, dx);
+
+  for (let i = 0; i <= posts; i++) {
+    const t = i / posts;
+    const px = x0 + dx * t, pz = z0 + dz * t;
+    const post = mesh(new THREE.BoxGeometry(0.08, 0.9, 0.08), MAT.fence);
+    post.position.set(px, 0.45, pz);
+    group.add(post);
+  }
+
+  // Two horizontal rails
+  [0.25, 0.6].forEach(h => {
+    const rail = mesh(new THREE.BoxGeometry(len, 0.06, 0.06), MAT.fence);
+    rail.position.set((x0 + x1) / 2, h, (z0 + z1) / 2);
+    rail.rotation.y = angle;
+    group.add(rail);
+  });
+
+  scene.add(group);
+}
+
+/* ============================================================
+   CREATE STONE — flattened sphere decoration
+   ============================================================ */
+function createStone(x, z, r = 0.18) {
+  const s = mesh(new THREE.SphereGeometry(r, 8, 6), MAT.stone);
+  s.scale.y = 0.55;
+  s.position.set(x, r * 0.28, z);
+  scene.add(s);
+}
+
+/* ============================================================
+   CREATE SUMMER HUT — 4 bamboo poles + conical thatch roof + raised deck
+   The hut is centred at (0,0,0) and shelters the table + chairs.
+   ============================================================ */
+function createSummerHut() {
+  const group = new THREE.Group();
+
+  const POLE_H    = 3.6;   // height of corner poles
+  const POLE_R    = 0.085;
+  const ROOF_BASE = 4.2;   // radius of cone base (covers seating area)
+  const ROOF_TOP  = 0.28;  // small flat cap radius
+  const ROOF_H    = 1.6;   // cone height
+  const ROOF_Y    = POLE_H; // cone sits atop poles
+
+  // ── Raised deck / platform ─────────────────────────────────
+  const deckGeo = new THREE.CylinderGeometry(4.6, 4.6, 0.12, 8);
+  const deck = mesh(deckGeo, MAT.hutFloor);
+  deck.position.y = 0.05;
+  group.add(deck);
+
+  // Deck edge trim
+  const trim = mesh(new THREE.TorusGeometry(4.6, 0.055, 6, 8), MAT.hutBeam);
+  trim.rotation.x = Math.PI / 2;
+  trim.position.y = 0.12;
+  group.add(trim);
+
+  // ── Corner poles — octagonal arrangement ──────────────────
+  const poleGeo = new THREE.CylinderGeometry(POLE_R, POLE_R * 1.15, POLE_H, 8);
+  const poleAngles = [0, Math.PI/2, Math.PI, -Math.PI/2];          // 4 main poles
+  const poleRadius = 3.2;
+
+  poleAngles.forEach(angle => {
+    const px = Math.cos(angle) * poleRadius;
+    const pz = Math.sin(angle) * poleRadius;
+    const pole = mesh(poleGeo, MAT.hutPole);
+    pole.position.set(px, POLE_H / 2 + 0.12, pz);
+    group.add(pole);
+
+    // Carved notch cap on each pole
+    const cap = mesh(new THREE.CylinderGeometry(POLE_R * 1.4, POLE_R * 1.4, 0.1, 8), MAT.hutBeam);
+    cap.position.set(px, POLE_H + 0.12, pz);
+    group.add(cap);
+  });
+
+  // ── Perimeter beam ring (top of poles) ────────────────────
+  // 4 horizontal beams connecting adjacent poles
+  for (let i = 0; i < 4; i++) {
+    const a0 = poleAngles[i];
+    const a1 = poleAngles[(i + 1) % 4];
+    const x0 = Math.cos(a0) * poleRadius, z0 = Math.sin(a0) * poleRadius;
+    const x1 = Math.cos(a1) * poleRadius, z1 = Math.sin(a1) * poleRadius;
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const dx = x1 - x0, dz = z1 - z0;
+    const len = Math.sqrt(dx*dx + dz*dz);
+    const angle = Math.atan2(dz, dx);
+
+    const beam = mesh(new THREE.BoxGeometry(len, 0.12, 0.12), MAT.hutBeam);
+    beam.position.set(cx, POLE_H + 0.18, cz);
+    beam.rotation.y = angle;
+    group.add(beam);
+  }
+
+  // ── Diagonal cross-beams for structural interest ───────────
+  [Math.PI/4, -Math.PI/4].forEach(a => {
+    const x0 = Math.cos(a) * poleRadius, z0 = Math.sin(a) * poleRadius;
+    const x1 = Math.cos(a + Math.PI) * poleRadius, z1 = Math.sin(a + Math.PI) * poleRadius;
+    const len = Math.sqrt((x1-x0)**2 + (z1-z0)**2);
+    const crossBeam = mesh(new THREE.BoxGeometry(len, 0.1, 0.09), MAT.hutBeam);
+    crossBeam.position.set(0, POLE_H + 0.18, 0);
+    crossBeam.rotation.y = a;
+    group.add(crossBeam);
+  });
+
+  // ── Thatch roof — layered cones for straw texture ─────────
+  // Main outer cone
+  const roofConeGeo = new THREE.ConeGeometry(ROOF_BASE, ROOF_H, 8, 1, true);
+  const roofCone = mesh(roofConeGeo, MAT.thatch);
+  roofCone.position.y = ROOF_Y + ROOF_H / 2;
+  group.add(roofCone);
+
+  // Inner slightly smaller cone (creates layered thatch look)
+  const innerConeGeo = new THREE.ConeGeometry(ROOF_BASE * 0.76, ROOF_H * 0.72, 8, 1, true);
+  const innerCone = mesh(innerConeGeo, MAT.thatchDark);
+  innerCone.position.y = ROOF_Y + ROOF_H * 0.28 + (ROOF_H * 0.72) / 2;
+  group.add(innerCone);
+
+  // Third smallest accent cone near peak
+  const peakConeGeo = new THREE.ConeGeometry(ROOF_BASE * 0.4, ROOF_H * 0.42, 8, 1, true);
+  const peakCone = mesh(peakConeGeo, MAT.thatch);
+  peakCone.position.y = ROOF_Y + ROOF_H * 0.6 + (ROOF_H * 0.42) / 2;
+  group.add(peakCone);
+
+  // Thatch cap / finial at peak
+  const capGeo = new THREE.CylinderGeometry(ROOF_TOP, ROOF_TOP * 1.6, 0.22, 8);
+  const cap2 = mesh(capGeo, MAT.hutBeam);
+  cap2.position.y = ROOF_Y + ROOF_H + 0.11;
+  group.add(cap2);
+
+  // Finial spike
+  const spikeGeo = new THREE.ConeGeometry(0.06, 0.35, 6);
+  const spike = mesh(spikeGeo, MAT.hutPole);
+  spike.position.y = ROOF_Y + ROOF_H + 0.35;
+  group.add(spike);
+
+  // ── Hanging rafters under eaves (decorative) ──────────────
+  const rafterCount = 12;
+  for (let i = 0; i < rafterCount; i++) {
+    const ra = (i / rafterCount) * Math.PI * 2;
+    const rx = Math.cos(ra) * (ROOF_BASE - 0.3);
+    const rz = Math.sin(ra) * (ROOF_BASE - 0.3);
+    const rafter = mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.55, 6), MAT.hutPole);
+    rafter.position.set(rx, ROOF_Y + 0.18, rz);
+    group.add(rafter);
+  }
+
+  // ── Low decorative side panels (bamboo screen walls, open sides) ──
+  // Only two partial side panels — keeps it open / airy
+  [Math.PI/4, Math.PI + Math.PI/4].forEach(baseAngle => {
+    for (let i = 0; i < 4; i++) {
+      const bAngle = baseAngle + i * 0.28;
+      const bx = Math.cos(bAngle) * 3.8;
+      const bz = Math.sin(bAngle) * 3.8;
+      const slat = mesh(new THREE.BoxGeometry(0.05, 1.1, 0.05), MAT.hutPole);
+      slat.position.set(bx, 0.65, bz);
+      group.add(slat);
+    }
+    // Horizontal rail connecting slats
+    const railAngle = baseAngle + 1.5 * 0.28;
+    const rx = Math.cos(railAngle) * 3.8;
+    const rz = Math.sin(railAngle) * 3.8;
+    const rail = mesh(new THREE.BoxGeometry(0.05, 0.05, 1.1), MAT.hutBeam);
+    rail.position.set(rx, 0.9, rz);
+    rail.rotation.y = baseAngle;
+    group.add(rail);
+  });
+
+  scene.add(group);
+  return group;
+}
+
+/* ============================================================
+   CREATE ENVIRONMENT — trees, fence, stones, flower beds
+   ============================================================ */
+function createEnvironment() {
+  // Trees around perimeter
+  const treePositions = [
+    [-7, -7], [7, -7], [-7, 7], [7, 7],
+    [0, -9], [0, 9], [-9, 0], [9, 0],
+    [-5, -11], [5, -11], [-5, 11], [5, 11],
+    [-11, -5], [-11, 5], [11, -5], [11, 5],
+  ];
+  treePositions.forEach(([x, z]) => {
+    const scale = 0.8 + Math.random() * 0.5;
+    createTree(x, z, scale);
+  });
+
+  // Fence segments forming a garden boundary
+  const R = 13;
+  const segments = 8;
+  for (let i = 0; i < segments; i++) {
+    const a0 = (i / segments) * Math.PI * 2;
+    const a1 = ((i + 1) / segments) * Math.PI * 2;
+    createFence(
+      Math.cos(a0) * R, Math.sin(a0) * R,
+      Math.cos(a1) * R, Math.sin(a1) * R
+    );
+  }
+
+  // Garden stones
+  const stoneRing = [
+    [4, 0], [-4, 0], [0, 4], [0, -4],
+    [3, 3], [-3, 3], [3, -3], [-3, -3],
+  ];
+  stoneRing.forEach(([x, z]) => createStone(x + 0.5, z + 0.5, 0.12 + Math.random() * 0.12));
+
+  // Flower-bed clusters (coloured spheres = flowers)
+  const flowerColors = [0xE91E63, 0xFF9800, 0xFFEB3B, 0x9C27B0, 0xF44336];
+  const bedCentres = [[-5.5, -1.5], [5.5, -1.5], [-5.5, 1.5], [5.5, 1.5]];
+  bedCentres.forEach(([bx, bz]) => {
+    for (let i = 0; i < 8; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 0.3 + Math.random() * 0.6;
+      const fx = bx + Math.cos(angle) * dist;
+      const fz = bz + Math.sin(angle) * dist;
+      const flowerMat = new THREE.MeshStandardMaterial({
+        color: flowerColors[Math.floor(Math.random() * flowerColors.length)],
+        roughness: 0.7, metalness: 0.0
+      });
+      const flower = mesh(new THREE.SphereGeometry(0.1, 6, 5), flowerMat);
+      flower.position.set(fx, 0.22, fz);
+      scene.add(flower);
+
+      const stemMat = new THREE.MeshStandardMaterial({ color: 0x4CAF50, roughness: 1 });
+      const stem = mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 5), stemMat);
+      stem.position.set(fx, 0.11, fz);
+      scene.add(stem);
+    }
+  });
+
+  // Decorative curved panel / trellis
+  [-6.5, 6.5].forEach(px => {
+    const panel = mesh(new THREE.BoxGeometry(0.06, 2.2, 2.0), MAT.fence);
+    panel.position.set(px, 1.1, 0);
+    panel.castShadow = true;
+    scene.add(panel);
+    // Cross-bars
+    [-0.7, 0, 0.7].forEach(py => {
+      const bar = mesh(new THREE.BoxGeometry(0.05, 0.06, 2.0), MAT.fence);
+      bar.position.set(px + 0.03, 1.1 + py, 0);
+      scene.add(bar);
+    });
+  });
+}
+
+/* ============================================================
+   MAIN BUILD
+   ============================================================ */
+function buildScene() {
+  createGround();
+  setupLighting();
+
+  // Furniture
+  createTable();
+  createChair(-1.8, 0, Math.PI / 2);      // left
+  createChair( 1.8, 0, -Math.PI / 2);     // right
+  createChair( 0, -1.55, 0);              // front
+  createChair( 0,  1.55, Math.PI);        // back
+
+  // Objects on table
+  createTin(-0.55, -0.25, true);           // Milo tin (Ghana green label)
+  createTin( 0.55, -0.25, false);          // Nido tin (red/white label)
+  createCup(-0.3,  0.3, MAT.cupCream);    // Cup 1
+  createCup( 0.3,  0.3, MAT.cupBlue);    // Cup 2
+
+  createEnvironment();
+  // Summer hut — built last so it sits above everything
+  createSummerHut();
+}
+
+/* ============================================================
+   RESIZE HANDLER
+   ============================================================ */
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* ============================================================
+   ANIMATION LOOP
+   ============================================================ */
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   ENTRY POINT
+   ============================================================ */
+initScene();
+setupControls();
+buildScene();
+animate();
+
+</script>
+</body>
+</html>
